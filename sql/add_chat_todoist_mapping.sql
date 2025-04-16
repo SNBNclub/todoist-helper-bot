@@ -1,0 +1,1 @@
+INSERT INTO chat_to_todoist (chat_id, todoist_id) VALUES ($1, $2);
