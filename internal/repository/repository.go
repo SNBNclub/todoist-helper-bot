@@ -14,20 +14,37 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-type localStorage struct {
+type LocalStorage struct {
 	tokens sync.Map
+	states sync.Map
 }
 
-func (l *localStorage) StoreToken(userID, token string) {
+func NewLocalStorage() *LocalStorage {
+	return &LocalStorage{}
+}
+
+func (l *LocalStorage) StoreToken(userID, token string) {
 	l.tokens.Store(userID, token)
 }
 
-func (l *localStorage) GetToken(userID string) string {
+func (l *LocalStorage) GetToken(userID string) string {
 	val, ok := l.tokens.Load(userID)
 	if !ok {
 		return ""
 	}
 	return val.(string)
+}
+
+func (l *LocalStorage) StoreState(state string, chatID int) {
+	l.states.Store(state, chatID)
+}
+
+func (l *LocalStorage) GetChatID(state string) int {
+	val, loaded := l.states.LoadAndDelete(state)
+	if !loaded {
+		return -1
+	}
+	return val.(int)
 }
 
 type Dao struct {

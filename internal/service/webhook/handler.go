@@ -55,5 +55,9 @@ func init() {
 	http.HandleFunc("/webhook", handleHTTP)
 	http.HandleFunc("/auth", handleOAuth)
 	http.HandleFunc("/main", handleMain)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc()
+
 	log.Fatal(http.ListenAndServe("localhost:5050", nil))
 }
