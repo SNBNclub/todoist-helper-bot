@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"sync"
 
 	"example.com/bot/internal/logger"
@@ -21,7 +22,11 @@ type LocalStorage struct {
 }
 
 func NewLocalStorage() *LocalStorage {
-	return &LocalStorage{}
+	return &LocalStorage{
+		tokens:        sync.Map{},
+		states:        sync.Map{},
+		botUserStates: sync.Map{},
+	}
 }
 
 func (l *LocalStorage) StoreToken(userID, token string) {
@@ -37,7 +42,8 @@ func (l *LocalStorage) GetToken(userID string) string {
 }
 
 func (l *LocalStorage) StoreState(state string, chatID int) {
-	l.states.Store(state, chatID)
+
+	// l.states.Store(state, chatID)
 }
 
 func (l *LocalStorage) GetChatID(state string) int {
@@ -86,9 +92,15 @@ func New(ctx context.Context, host, port, dbName, user, password string) *Dao {
 }
 
 func (d *Dao) CreateUser(ctx context.Context, u *models.TgUser) (bool, error) {
-	query, err := tools.LoadQuery("sql/add_chat.sql")
+	wd, err := os.Getwd()
 	if err != nil {
-
+		panic(err)
+		// return false, err
+	}
+	query, err := tools.LoadQuery(wd + "/../../sql/add_chat.sql")
+	if err != nil {
+		panic(err)
+		// return false, err
 	}
 	var isNewUser bool
 	err = d.db.QueryRowContext(ctx, query, u.ChatID, u.Name).Scan(&isNewUser)

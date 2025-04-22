@@ -1,8 +1,8 @@
 version: "3.9"
 services:
   postgres:
-    container_name: postgres_container
-    image: postgres:15
+    image: postgres:latest
+    container_name: postgres
     environment:
       POSTGRES_DB: tracker
       POSTGRES_USER: root

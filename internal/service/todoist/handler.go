@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -13,8 +14,10 @@ import (
 	"sync"
 
 	tgbot "example.com/bot/internal/bot"
+	"example.com/bot/internal/logger"
 	"example.com/bot/internal/models"
 	"example.com/bot/internal/repository"
+	"go.uber.org/zap"
 )
 
 const (
@@ -30,12 +33,14 @@ type AuthHandler struct {
 	storage *repository.LocalStorage
 }
 
-func NewAuthHandler(clientID, clientSecret string, storage *repository.LocalStorage) *AuthHandler {
+func NewAuthHandler(clientID, clientSecret string, r *repository.Dao, storage *repository.LocalStorage) *AuthHandler {
 	return &AuthHandler{
 		queryParams: url.Values{
 			"client_id":     {clientID},
 			"client_secret": {clientSecret},
 		},
+		r:       r,
+		storage: storage,
 	}
 }
 
@@ -52,6 +57,13 @@ func genRandomState() (string, error) {
 // use state to authentificate
 // TODO :: rename a
 func (a *AuthHandler) handleOAuth(w http.ResponseWriter, r *http.Request) {
+	// TODO :: remove recover
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println("Recovered. Error:\n", r)
+		}
+	}()
+
 	log.Println("get auth request")
 
 	chatID, err := strconv.Atoi(r.URL.Query().Get("chat_id"))
@@ -66,14 +78,26 @@ func (a *AuthHandler) handleOAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	logger.Log.Debug("state & chat_id",
+		zap.String("state", state),
+		zap.Int("chatID", chatID),
+	)
+
 	http.SetCookie(w, &http.Cookie{
 		Name:   "oauth_state",
 		Value:  state,
 		Path:   "/",
 		MaxAge: 300,
 	})
+	logger.Log.Debug("set cookie")
+
+	if a.storage == nil {
+		panic("storage is nill")
+	}
 
 	a.storage.StoreState(state, chatID)
+
+	logger.Log.Debug("state stored")
 
 	queryParams := a.queryParams
 	queryParams.Add("state", state)

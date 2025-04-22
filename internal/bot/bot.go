@@ -4,25 +4,12 @@ import (
 	"context"
 	"sync"
 
-	"example.com/bot/internal/repository"
 	"github.com/go-telegram/bot"
 )
 
 type TelegramBotApi struct {
 	b *bot.Bot
 	//
-}
-
-type TelegramBotHandlers struct {
-	r       *repository.Dao
-	storage *repository.LocalStorage
-}
-
-func NewTgHandlers(r *repository.Dao, storage *repository.LocalStorage) *TelegramBotHandlers {
-	return &TelegramBotHandlers{
-		r:       r,
-		storage: storage,
-	}
 }
 
 func New(TelegramTokenAPI string, debugHandler bot.DebugHandler, handlers *TelegramBotHandlers) (*TelegramBotApi, error) {

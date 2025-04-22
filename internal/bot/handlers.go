@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"example.com/bot/internal/models"
+	"example.com/bot/internal/repository"
 	"github.com/go-telegram/bot"
 	m "github.com/go-telegram/bot/models"
 )
@@ -18,9 +19,25 @@ const (
 	waitingForTimeToTrackState
 )
 
+type TelegramBotHandlers struct {
+	r       *repository.Dao
+	storage *repository.LocalStorage
+}
+
+func NewTgHandlers(r *repository.Dao, storage *repository.LocalStorage) *TelegramBotHandlers {
+	return &TelegramBotHandlers{
+		r:       r,
+		storage: storage,
+	}
+}
+
 func (th *TelegramBotHandlers) defaultHandler(ctx context.Context, b *bot.Bot, update *m.Update) {
+	if update.Message == nil {
+		return
+	}
 	chatID := update.Message.Chat.ID
 	state := th.storage.GetStatus(chatID)
+	// logger.Log.Debug("Get status")
 	switch state {
 	case waitingForTimeToTrackState:
 		if update.Message.Text == "/ignore_task" {
@@ -100,10 +117,14 @@ func (th *TelegramBotHandlers) defaultHandler(ctx context.Context, b *bot.Bot, u
 }
 
 func (th *TelegramBotHandlers) startHandler(ctx context.Context, b *bot.Bot, update *m.Update) {
+	if update.Message == nil {
+		return
+	}
 	u := &models.TgUser{
 		ChatID: update.Message.Chat.ID,
 		Name:   update.Message.Chat.Username,
 	}
+	// TODO :: fix true/false for exists
 	exist, err := th.r.CreateUser(ctx, u)
 	if err != nil {
 		panic(err)
