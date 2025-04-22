@@ -1,17 +1,18 @@
-package service
+package handler
 
 import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync"
 
+	tgbot "example.com/bot/internal/bot"
 	"example.com/bot/internal/models"
 	"example.com/bot/internal/repository"
 )
@@ -29,32 +30,13 @@ type AuthHandler struct {
 	storage *repository.LocalStorage
 }
 
-func New(clientID, clientSecret string, storage *repository.LocalStorage) *AuthHandler {
+func NewAuthHandler(clientID, clientSecret string, storage *repository.LocalStorage) *AuthHandler {
 	return &AuthHandler{
 		queryParams: url.Values{
 			"client_id":     {clientID},
 			"client_secret": {clientSecret},
 		},
 	}
-}
-
-func (a *AuthHandler) handleHTTP(w http.ResponseWriter, r *http.Request) {
-	req := models.WebHookRequest{}
-	defer r.Body.Close()
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		rBytes, _ := io.ReadAll(r.Body)
-		log.Fatalf("unexpected req body: %s\n", string(rBytes))
-		// log.Error("Unexpecter request body",
-		// 	zap.String("body", string(rBytes)),
-		// )
-		w.WriteHeader(http.StatusBadRequest) // 400
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-
-	fmt.Printf("USER_ID: %s\n", req.UserID)
-
-	log.Printf("webhook request: %v\n", req)
 }
 
 func genRandomState() (string, error) {
@@ -147,7 +129,9 @@ func (a *AuthHandler) handleCode(w http.ResponseWriter, r *http.Request) {
 	a.r.AddUserId(context.Background(), int64(chatID), id)
 
 	// TODO :: deeplink to tgbot redirect
-	http.Redirect(w, r, "/main", http.StatusSeeOther)
+	// http.Redirect(w, r, "t.me/evdocim_test_bot?regfinish=XXXX", http.StatusSeeOther)
+	// TODO :: awfull, fix
+	a.storage.SetStatus(int64(chatID), tgbot.TodoistRegfinishState)
 }
 
 func handleMain(w http.ResponseWriter, r *http.Request) {
@@ -187,18 +171,43 @@ func getUserID(token string) (string, error) {
 	return user.ID, nil
 }
 
-func main() {
-	h := New("", "", nil)
+type Service struct {
+	srv *http.Server
 
-	log.Println("strating server")
+	h *AuthHandler
+	w *WebHookHandler
+}
 
-	http.HandleFunc("/webhook", h.handleHTTP)
-	http.HandleFunc("/auth", h.handleOAuth)
-	http.HandleFunc("/auth/callback", h.handleCode)
+func NewService(authHandler *AuthHandler, webhookHandler *WebHookHandler) *Service {
+	return &Service{
+		srv: &http.Server{
+			Addr: ":8080",
+		},
+		h: authHandler,
+		w: webhookHandler,
+	}
+}
+
+func (s *Service) Start(wg *sync.WaitGroup, ctx context.Context) {
+
+	http.HandleFunc("/auth", s.h.handleOAuth)
+	http.HandleFunc("/auth/callback", s.h.handleCode)
+	http.HandleFunc("/webhook", s.w.handleHTTP)
 	http.HandleFunc("/main", handleMain)
 
-	err := http.ListenAndServe(":8080", nil)
-	if err != nil {
-		panic(err)
-	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		if err := s.srv.ListenAndServe(); err != http.ErrServerClosed {
+			// log error
+			log.Fatalf("ListenAndServe(): %v", err)
+		}
+	}()
+
+}
+
+// TODO :: or pass ctx to start
+func (s *Service) Shutdown() error {
+	return s.srv.Shutdown(context.Background())
 }

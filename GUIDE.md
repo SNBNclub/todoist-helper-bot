@@ -27,6 +27,9 @@
 ### DataBases
 - [ORM with Migrations tool](https://gorm.io/docs/)
 
+### Setting up vnc
+- [Console](https://coddswallop.wordpress.com/2012/05/09/ubuntu-12-04-precise-pangolin-complete-vnc-server-setup/)
+
 
 ## Setting up own server
 - Get server
@@ -35,6 +38,9 @@
   3. Domain will refresh on servers in 24 hours (DNS propagation). You can check it with `ping example.com`.
   4. Profit!!
 - On local computer
+  1. Fix the computer IP address in your router settings.
+  2. Get public IP from your internet provider.
+  3. Pass inner ports to global network in router settings.
 
 
 ## This project

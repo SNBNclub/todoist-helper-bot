@@ -2,7 +2,7 @@ package models
 
 import "time"
 
-type User struct {
+type TgUser struct {
 	ChatID int64
 	Name   string
 }
@@ -45,16 +45,14 @@ type Task struct {
 	AddedAt        time.Time `json:"added_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 	CompletedAt    any       `json:"completed_at"`
-	Duration       struct {
-		Amount int    `json:"amount"`
-		Unit   string `json:"unit"`
-	} `json:"duration"`
+	// TODO :: is pointer to structure correct in json umnmarshaling
+	Duration *Duration `json:"duration"`
 }
 
 // TODO :: rename
 type WebHookParsed struct {
-	UserID string
-	TimeSpent unit
+	UserID    string
+	TimeSpent uint32
 }
 
 type Initiator struct {
@@ -63,6 +61,11 @@ type Initiator struct {
 	ID        string `json:"id"`
 	ImageID   string `json:"image_id"`
 	IsPremium bool   `json:"is_premium"`
+}
+
+type Duration struct {
+	Amount int    `json:"amount"`
+	Unit   string `json:"unit"`
 }
 
 // probably unneeded

@@ -3,38 +3,37 @@ package handler
 import (
 	"encoding/json"
 	"io"
-	"log"
 	"net/http"
 	"regexp"
-	"slices"
+	"strconv"
 	"sync"
-
-	// _ "example.com/bot/pkg/dao"
 
 	l "example.com/bot/internal/logger"
 	"example.com/bot/internal/models"
 	"go.uber.org/zap"
 )
 
-const itemUpdateEvent = "item:completed"
+const (
+	itemUpdateEvent      = "item:completed"
+	regexpTimeLogPattern = `^@log(?P<hours_10>\d+)(?P<hours_1>\d+):(?P<mins_10>\d+)(?P<mins_1>\d+)`
+)
 
 type WebHookHandler struct {
 	u chan<- models.WebHookParsed
 
-	wg *sync.WaitGroup
+	r           *regexp.Regexp
+	subexpNames []string
+	wg          *sync.WaitGroup
 }
 
-func New(updates chan<- models.WebHookRequest) *WebHookHandler {
-	return nil
-}
-
-func (wh *WebHookHandler) Start() {
-
-}
-
-// TODO :: add context wich listening interupts
-func (wh *WebHookHandler) ShutDown() {
-
+func NewWebHookHandler(updates chan<- models.WebHookParsed) *WebHookHandler {
+	r := regexp.MustCompile(regexpTimeLogPattern)
+	return &WebHookHandler{
+		u:           updates,
+		r:           r,
+		subexpNames: r.SubexpNames(),
+		wg:          &sync.WaitGroup{},
+	}
 }
 
 func (wh *WebHookHandler) handleHTTP(w http.ResponseWriter, r *http.Request) {
@@ -62,7 +61,7 @@ func (wh *WebHookHandler) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	)
 
 	wh.wg.Add(1)
-	go processWebHook(req)
+	go wh.processWebHook(&req)
 	// wh.u <- req
 
 }
@@ -71,68 +70,68 @@ func (wh *WebHookHandler) processWebHook(req *models.WebHookRequest) {
 	if req.EventName != itemUpdateEvent {
 		return
 	}
-	// TODO :: add case if task has duration
+
+	wp := models.WebHookParsed{
+		UserID:    req.UserID,
+		TimeSpent: 0,
+	}
+
 	task := req.EventData.(models.Task)
-
-	if task.Labels == nil || len(task.Labels) == 0 {
-
-	}
-
-	is := slices.Contains(task.Labels, "@track")
-	if is {
-		// send messsage with asking how much time the task took
-	}
-
-	// TODO :: mov in init
-	pattern := `^@log(?P<hours_10>\d+)(?P<hours_1>\d+):(?P<mins_10>\d+)(?P<mins_1>\d+)`
-	r, err := regexp.Compile(pattern)
-	if err != nil {
-		panic(err)
-	}
-
-	matches := r.FindStringSubmatch(input)
-	if matches == nil {
-		fmt.Println("No match found")
+	if task.Duration != nil {
+		switch task.Duration.Unit {
+		case "minute":
+			wp.TimeSpent += uint32(task.Duration.Amount)
+		case "day":
+			wp.TimeSpent += uint32(task.Duration.Amount) * 24 * 60
+		}
+		wh.u <- wp
 		return
 	}
 
-	result := make(map[string]int)
-	for i, name := range r.SubexpNames() {
+	if len(task.Labels) == 0 {
+		return
+	}
+
+	var matches []string
+	for _, label := range task.Labels {
+		if label == "@track" {
+			wh.u <- wp
+			return
+		}
+		matchesTmp := wh.r.FindStringSubmatch(label)
+		if matchesTmp != nil {
+			matches = matchesTmp
+			break
+		}
+	}
+
+	if matches == nil {
+		return
+	}
+
+	result := make(map[string]uint32)
+	for i, name := range wh.subexpNames {
 		if i > 0 && name != "" && i < len(matches) {
 			dig, err := strconv.Atoi(matches[i])
 			if err != nil {
 				panic(err)
 			}
-			result[name] = dig
+			result[name] = uint32(dig)
 		}
 	}
 
-	timeSpent := 0
 	for key, val := range result {
 		switch key {
 		case "hours_10":
-			timeSpent += val * 600
+			wp.TimeSpent += val * 600
 		case "hours_1":
-			timeSpent += val * 60
+			wp.TimeSpent += val * 60
 		case "mins_10":
-			timeSpent += val * 10
+			wp.TimeSpent += val * 10
 		case "mins_1":
-			timeSpent += val
+			wp.TimeSpent += val
 		}
 	}
 
-	wp := WebHookParsed{
-		UserID: req.UserID,
-		TimeSpent: timeSpent,
-	}
-
 	wh.u <- wp
-}
-
-func init() {
-	u := New(nil)
-
-	http.HandleFunc("/webhook", u.handleHTTP)
-
-	log.Fatal(http.ListenAndServe("localhost:5050", nil))
 }

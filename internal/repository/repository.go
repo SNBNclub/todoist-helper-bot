@@ -15,8 +15,9 @@ import (
 )
 
 type LocalStorage struct {
-	tokens sync.Map
-	states sync.Map
+	tokens        sync.Map
+	states        sync.Map
+	botUserStates sync.Map
 }
 
 func NewLocalStorage() *LocalStorage {
@@ -47,6 +48,18 @@ func (l *LocalStorage) GetChatID(state string) int {
 	return val.(int)
 }
 
+func (l *LocalStorage) SetStatus(chatID int64, status int) {
+	l.botUserStates.Store(chatID, status)
+}
+
+func (l *LocalStorage) GetStatus(chatID int64) int {
+	val, ok := l.botUserStates.Load(chatID)
+	if !ok {
+		return -1
+	}
+	return val.(int)
+}
+
 type Dao struct {
 	db *sql.DB
 }
@@ -72,7 +85,7 @@ func New(ctx context.Context, host, port, dbName, user, password string) *Dao {
 	return &Dao{db: db}
 }
 
-func (d *Dao) CreateUser(ctx context.Context, u *models.User) (bool, error) {
+func (d *Dao) CreateUser(ctx context.Context, u *models.TgUser) (bool, error) {
 	query, err := tools.LoadQuery("sql/add_chat.sql")
 	if err != nil {
 
@@ -92,6 +105,9 @@ func (d *Dao) CreateUser(ctx context.Context, u *models.User) (bool, error) {
 
 func (d *Dao) AddUserId(ctx context.Context, chat_id int64, todoist_id string) error {
 	query, err := tools.LoadQuery("add_chat_todoist_mapping.sql")
+	if err != nil {
+
+	}
 	res, err := d.db.ExecContext(ctx, query, chat_id, todoist_id)
 	if err != nil {
 		logger.Log.Error("Error in user creating",
