@@ -99,10 +99,17 @@ func (a *AuthHandler) handleOAuth(w http.ResponseWriter, r *http.Request) {
 
 	logger.Log.Debug("state stored")
 
+	authLink := baseAuthURL + "?" + a.queryParams.Encode() + "&scope=data:read_write,data:delete" + "&state=" + state
+
 	queryParams := a.queryParams
+	queryParams.Add("scope", "scope=data:read_write,data:delete")
 	queryParams.Add("state", state)
 
-	authLink := baseAuthURL + "?" + queryParams.Encode()
+	// authLink := baseAuthURL + "?" + queryParams.Encode()
+
+	logger.Log.Debug("Auth url",
+		zap.String("URL", authLink),
+	)
 
 	http.Redirect(w, r, authLink, http.StatusSeeOther)
 }
@@ -144,12 +151,20 @@ func (a *AuthHandler) handleCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := getUserID(req.AccessToken)
+	id, name, err := getUserID(req.AccessToken)
+	logger.Log.Debug("data",
+		zap.String("todoist_id", id),
+		zap.String("todoist_name", name),
+	)
 	if err != nil {
 		panic(err)
 	}
 
 	chatID := a.storage.GetChatID(state)
+	logger.Log.Debug("chat_ID",
+		zap.Int("chatID", chatID),
+	)
+	a.r.AddTodoistUser(context.Background(), id, name)
 	a.r.AddUserId(context.Background(), int64(chatID), id)
 
 	// TODO :: deeplink to tgbot redirect
@@ -164,7 +179,7 @@ func handleMain(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("main page!!!"))
 }
 
-func getUserID(token string) (string, error) {
+func getUserID(token string) (string, string, error) {
 	client := &http.Client{}
 	req, err := http.NewRequest("POST", SyncURL, nil)
 	if err != nil {
@@ -175,24 +190,24 @@ func getUserID(token string) (string, error) {
 	resp, err := client.Do(req)
 	if resp.StatusCode != http.StatusOK {
 		log.Println(resp.StatusCode)
-		return "", nil
+		return "", "", nil
 	}
 	if err != nil {
 		panic(err)
 	}
-	defer resp.Body.Close()
 
-	res, err := io.ReadAll(resp.Body)
-	if err != nil {
-		panic(err)
-	}
-	log.Printf("resp body: %s\n", string(res))
-	user := models.SyncUser{}
-	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
+	// res, err := io.ReadAll(resp.Body)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// log.Printf("resp body: %s\n", string(res))
+	initReq := models.InitSyncReq{}
+	defer resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&initReq); err != nil {
 		log.Println(err.Error())
 	}
-
-	return user.ID, nil
+	log.Println(initReq)
+	return initReq.User.ID, initReq.User.FullName, nil
 }
 
 type Service struct {
@@ -229,9 +244,18 @@ func (s *Service) Start(wg *sync.WaitGroup, ctx context.Context) {
 		}
 	}()
 
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		<-ctx.Done()
+		if err := s.srv.Shutdown(ctx); err != nil {
+			panic(err)
+		}
+	}()
 }
 
 // TODO :: or pass ctx to start
-func (s *Service) Shutdown() error {
-	return s.srv.Shutdown(context.Background())
-}
+// func (s *Service) Shutdown() error {
+// 	return s.srv.Shutdown(context.Background())
+// }

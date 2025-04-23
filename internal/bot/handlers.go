@@ -5,10 +5,12 @@ import (
 	"regexp"
 	"strconv"
 
+	"example.com/bot/internal/logger"
 	"example.com/bot/internal/models"
 	"example.com/bot/internal/repository"
 	"github.com/go-telegram/bot"
 	m "github.com/go-telegram/bot/models"
+	"go.uber.org/zap"
 )
 
 const (
@@ -33,6 +35,9 @@ func NewTgHandlers(r *repository.Dao, storage *repository.LocalStorage) *Telegra
 
 func (th *TelegramBotHandlers) defaultHandler(ctx context.Context, b *bot.Bot, update *m.Update) {
 	if update.Message == nil {
+		logger.Log.Debug("update received in default",
+			zap.Any("update", update),
+		)
 		return
 	}
 	chatID := update.Message.Chat.ID
@@ -125,11 +130,12 @@ func (th *TelegramBotHandlers) startHandler(ctx context.Context, b *bot.Bot, upd
 		Name:   update.Message.Chat.Username,
 	}
 	// TODO :: fix true/false for exists
-	exist, err := th.r.CreateUser(ctx, u)
+	isNewUser, err := th.r.CreateUser(ctx, u)
+	// exist = !exist
 	if err != nil {
 		panic(err)
 	}
-	if exist {
+	if !isNewUser {
 		b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: u.ChatID,
 			Text:   "already reg!",

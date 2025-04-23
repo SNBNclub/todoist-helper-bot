@@ -39,9 +39,7 @@ func main() {
 
 	r := repository.New(ctx, cfg.DB_HOST, cfg.DB_PORT, cfg.DB_NAME, cfg.DB_USER, cfg.DB_PASSWORD)
 	storage := repository.NewLocalStorage()
-	if storage == nil {
-		panic("storage creating with error")
-	}
+
 	ch := make(chan models.WebHookParsed)
 
 	ah := handler.NewAuthHandler(cfg.APP_CLIENT_ID, cfg.APP_CLIENT_SECRET, r, storage)

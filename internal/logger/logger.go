@@ -49,7 +49,7 @@ func getLogger() *zap.Logger {
 	consoleLogginLevel := zap.NewAtomicLevelAt(zapcore.DebugLevel)
 	// TODO::enable and disable logging for the web log
 	botLogginLevel := zap.NewAtomicLevelAt(zapcore.PanicLevel)
-	fileLoggingLevel := zap.NewAtomicLevelAt(zapcore.InfoLevel)
+	fileLoggingLevel := zap.NewAtomicLevelAt(zapcore.DebugLevel)
 
 	http.HandleFunc("/logging_level_console", consoleLogginLevel.ServeHTTP)
 	http.HandleFunc("/loggin_level_bot", botLogginLevel.ServeHTTP)

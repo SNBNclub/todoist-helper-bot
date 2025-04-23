@@ -84,6 +84,13 @@ type UpdateItemRequest struct {
 	Duration       map[string]interface{} `json:"duration"` // Use map[string]interface{} if the structure is dynamic
 }
 
+type InitSyncReq struct {
+	FullSync      bool        `json:"full_sync"`
+	SyncToken     string      `json:"sync_token"`
+	TempIDMapping interface{} `json:"temp_id_mapping"`
+	User          SyncUser    `json:"user"`
+}
+
 type SyncUser struct {
 	ActivatedUser     bool   `json:"activated_user"`
 	AutoReminder      int    `json:"auto_reminder"`

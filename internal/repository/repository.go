@@ -42,8 +42,7 @@ func (l *LocalStorage) GetToken(userID string) string {
 }
 
 func (l *LocalStorage) StoreState(state string, chatID int) {
-
-	// l.states.Store(state, chatID)
+	l.states.Store(state, chatID)
 }
 
 func (l *LocalStorage) GetChatID(state string) int {
@@ -115,14 +114,52 @@ func (d *Dao) CreateUser(ctx context.Context, u *models.TgUser) (bool, error) {
 	return true, nil
 }
 
-func (d *Dao) AddUserId(ctx context.Context, chat_id int64, todoist_id string) error {
-	query, err := tools.LoadQuery("add_chat_todoist_mapping.sql")
+func (d *Dao) AddTodoistUser(ctx context.Context, todoistID string, userName string) error {
+	wd, err := os.Getwd()
 	if err != nil {
+		panic(err)
+		// return false, err
+	}
+	query, err := tools.LoadQuery(wd + "/../../sql/add_todoist_user.sql")
+	if err != nil {
+		panic(err)
+	}
+	res, err := d.db.ExecContext(ctx, query, todoistID, userName)
+	if err != nil {
+		logger.Log.Error("error in adding todoist user",
+			zap.Error(err),
+		)
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		logger.Log.Error("Error while checking affected rows",
+			zap.Error(err),
+		)
+		return err
+	}
+	if n != 1 {
+		logger.Log.Warn("Unexpected rows affected while user creating",
+			zap.Int64("affected", n),
+		)
+		return err
+	}
+	return nil
+}
 
+func (d *Dao) AddUserId(ctx context.Context, chat_id int64, todoist_id string) error {
+	wd, err := os.Getwd()
+	if err != nil {
+		panic(err)
+		// return false, err
+	}
+	query, err := tools.LoadQuery(wd + "/../../sql/add_chat_todoist_mapping.sql")
+	if err != nil {
+		panic(err)
 	}
 	res, err := d.db.ExecContext(ctx, query, chat_id, todoist_id)
 	if err != nil {
-		logger.Log.Error("Error in user creating",
+		logger.Log.Error("Error in mapping todoist and tg user",
 			zap.Error(err),
 		)
 		return err

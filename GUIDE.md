@@ -30,6 +30,8 @@
 ### Setting up vnc
 - [Console](https://coddswallop.wordpress.com/2012/05/09/ubuntu-12-04-precise-pangolin-complete-vnc-server-setup/)
 
+### JSON to Go models
+- [First](https://mholt.github.io/json-to-go/)
 
 ## Setting up own server
 - Get server

@@ -1,0 +1,1 @@
+INSERT INTO todoist_users (id, name) VALUES ($1, $2);
