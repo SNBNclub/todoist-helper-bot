@@ -22,9 +22,17 @@ const (
 )
 
 type TelegramBotHandlers struct {
+	// r       DaoInterface
 	r       *repository.Dao
 	storage *repository.LocalStorage
 }
+
+// type DaoInterface interface {
+// 	CreateUser(ctx context.Context, user *models.TgUser) (bool, error)
+// 	AddTodoistUser(ctx context.Context, todoistID, userName string) error
+// 	AddUserId(ctx context.Context, chatID int64, todoistID string) error
+// 	Close()
+// }
 
 func NewTgHandlers(r *repository.Dao, storage *repository.LocalStorage) *TelegramBotHandlers {
 	return &TelegramBotHandlers{

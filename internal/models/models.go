@@ -53,6 +53,7 @@ type Task struct {
 type WebHookParsed struct {
 	UserID    string
 	TimeSpent uint32
+	AskTime   bool
 }
 
 type Initiator struct {

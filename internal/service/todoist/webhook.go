@@ -15,7 +15,7 @@ import (
 
 const (
 	itemUpdateEvent      = "item:completed"
-	regexpTimeLogPattern = `^@log(?P<hours_10>\d+)(?P<hours_1>\d+):(?P<mins_10>\d+)(?P<mins_1>\d+)`
+	regexpTimeLogPattern = `^@log(?P<hours_10>\d+)(?P<hours_1>\d+)(?P<mins_10>\d+)(?P<mins_1>\d+)$`
 )
 
 type WebHookHandler struct {
@@ -54,6 +54,7 @@ func (wh *WebHookHandler) handleHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest) // 400
 		return
 	}
+
 	w.WriteHeader(http.StatusOK)
 
 	log.Debug("Webhook request",
@@ -67,6 +68,8 @@ func (wh *WebHookHandler) handleHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (wh *WebHookHandler) processWebHook(req *models.WebHookRequest) {
+	defer wh.wg.Done()
+
 	if req.EventName != itemUpdateEvent {
 		return
 	}
@@ -74,9 +77,13 @@ func (wh *WebHookHandler) processWebHook(req *models.WebHookRequest) {
 	wp := models.WebHookParsed{
 		UserID:    req.UserID,
 		TimeSpent: 0,
+		AskTime:   false,
 	}
 
-	task := req.EventData.(models.Task)
+	task, _ := req.EventData.(models.Task)
+	// if !ok {
+	// 	return
+	// }
 	if task.Duration != nil {
 		switch task.Duration.Unit {
 		case "minute":
@@ -95,6 +102,7 @@ func (wh *WebHookHandler) processWebHook(req *models.WebHookRequest) {
 	var matches []string
 	for _, label := range task.Labels {
 		if label == "@track" {
+			wp.AskTime = true
 			wh.u <- wp
 			return
 		}

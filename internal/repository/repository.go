@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
 	"sync"
 
 	"example.com/bot/internal/logger"
@@ -91,15 +90,12 @@ func New(ctx context.Context, host, port, dbName, user, password string) *Dao {
 }
 
 func (d *Dao) CreateUser(ctx context.Context, u *models.TgUser) (bool, error) {
-	wd, err := os.Getwd()
+	query, err := tools.LoadQuery("add_chat.sql")
 	if err != nil {
-		panic(err)
-		// return false, err
-	}
-	query, err := tools.LoadQuery(wd + "/../../sql/add_chat.sql")
-	if err != nil {
-		panic(err)
-		// return false, err
+		logger.Log.Error("Error loading SQL query",
+			zap.Error(err),
+		)
+		return false, err
 	}
 	var isNewUser bool
 	err = d.db.QueryRowContext(ctx, query, u.ChatID, u.Name).Scan(&isNewUser)
@@ -115,14 +111,12 @@ func (d *Dao) CreateUser(ctx context.Context, u *models.TgUser) (bool, error) {
 }
 
 func (d *Dao) AddTodoistUser(ctx context.Context, todoistID string, userName string) error {
-	wd, err := os.Getwd()
+	query, err := tools.LoadQuery("add_todoist_user.sql")
 	if err != nil {
-		panic(err)
-		// return false, err
-	}
-	query, err := tools.LoadQuery(wd + "/../../sql/add_todoist_user.sql")
-	if err != nil {
-		panic(err)
+		logger.Log.Error("Error loading SQL query",
+			zap.Error(err),
+		)
+		return err
 	}
 	res, err := d.db.ExecContext(ctx, query, todoistID, userName)
 	if err != nil {
@@ -148,14 +142,12 @@ func (d *Dao) AddTodoistUser(ctx context.Context, todoistID string, userName str
 }
 
 func (d *Dao) AddUserId(ctx context.Context, chat_id int64, todoist_id string) error {
-	wd, err := os.Getwd()
+	query, err := tools.LoadQuery("add_chat_todoist_mapping.sql")
 	if err != nil {
-		panic(err)
-		// return false, err
-	}
-	query, err := tools.LoadQuery(wd + "/../../sql/add_chat_todoist_mapping.sql")
-	if err != nil {
-		panic(err)
+		logger.Log.Error("Error loading SQL query",
+			zap.Error(err),
+		)
+		return err
 	}
 	res, err := d.db.ExecContext(ctx, query, chat_id, todoist_id)
 	if err != nil {
