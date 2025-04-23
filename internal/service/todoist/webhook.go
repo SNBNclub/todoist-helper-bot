@@ -80,10 +80,11 @@ func (wh *WebHookHandler) processWebHook(req *models.WebHookRequest) {
 		AskTime:   false,
 	}
 
-	task, _ := req.EventData.(models.Task)
-	// if !ok {
-	// 	return
-	// }
+	task, ok := req.EventData.(models.Task)
+	if !ok {
+		return
+	}
+	wp.Task = task.Content
 	if task.Duration != nil {
 		switch task.Duration.Unit {
 		case "minute":

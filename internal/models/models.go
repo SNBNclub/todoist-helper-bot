@@ -52,6 +52,7 @@ type Task struct {
 // TODO :: rename
 type WebHookParsed struct {
 	UserID    string
+	Task      string
 	TimeSpent uint32
 	AskTime   bool
 }

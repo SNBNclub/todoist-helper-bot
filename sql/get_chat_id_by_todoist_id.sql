@@ -1,0 +1,1 @@
+SELECT chat_id FROM chat_to_todoist WHERE todoist_id = $1;

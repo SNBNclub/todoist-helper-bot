@@ -42,6 +42,7 @@ func (l *LocalStorage) GetToken(userID string) string {
 
 func (l *LocalStorage) StoreState(state string, chatID int) {
 	l.states.Store(state, chatID)
+	// l.states.
 }
 
 func (l *LocalStorage) GetChatID(state string) int {
@@ -170,6 +171,23 @@ func (d *Dao) AddUserId(ctx context.Context, chat_id int64, todoist_id string) e
 		return err
 	}
 	return nil
+}
+
+func (d *Dao) GetChatIDByTodoist(ctx context.Context, todoistUserID string) int64 {
+	query, err := tools.LoadQuery("get_chat_id_by_todoist_id.sql")
+	if err != nil {
+		panic(err)
+	}
+	row := d.db.QueryRowContext(ctx, query, todoistUserID)
+	if row.Err() != nil {
+		panic(row.Err())
+	}
+	var chatID int64
+	err = row.Scan(&chatID)
+	if err != nil {
+		panic(err)
+	}
+	return chatID
 }
 
 // TODO:: add error processing

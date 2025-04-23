@@ -47,7 +47,7 @@ func main() {
 	srv := handler.NewService(ah, wh)
 
 	tgBotHandlers := tgbot.NewTgHandlers(r, storage)
-	b, err := tgbot.New(cfg.TELEGRAM_APITOKEN, dbh, tgBotHandlers)
+	b, err := tgbot.New(cfg.TELEGRAM_APITOKEN, dbh, tgBotHandlers, ch)
 	if err != nil {
 		panic(err)
 	}
