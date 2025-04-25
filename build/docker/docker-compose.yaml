@@ -31,6 +31,6 @@ services:
 #     networks:
 #       - postgres
 
-# networks:
-#   postgres:
-#     driver: bridge
+networks:
+  postgres_tracker:
+    driver: bridge

@@ -190,6 +190,43 @@ func (d *Dao) GetChatIDByTodoist(ctx context.Context, todoistUserID string) int6
 	return chatID
 }
 
+func (d *Dao) StoreTaskTracked(ctx context.Context, chatID int64, task models.WebHookParsed) {
+	query, err := tools.LoadQuery("store_task_recording.sql")
+	if err != nil {
+		panic(err)
+	}
+	_, err = d.db.ExecContext(ctx, query, chatID, task.Task, task.TimeSpent)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func (d *Dao) GetUserStats(ctx context.Context, chatID int64) (int64, []models.TaskShow) {
+	query, err := tools.LoadQuery("get_stats.sql")
+	if err != nil {
+		panic(err)
+	}
+	rows, err := d.db.Query(query, chatID)
+	if err != nil {
+		panic(err)
+	}
+	var timeSpent int64
+	tasks := make([]models.TaskShow, 0, 100)
+	for rows.Next() {
+		tt := models.TaskShow{}
+		err = rows.Scan(&timeSpent, &tt.Task, &tt.TimeSpent)
+		if err != nil {
+			panic(err)
+		}
+		tasks = append(tasks, tt)
+	}
+	logger.Log.Debug("get stats",
+		zap.Int64("timeSpentSUm", timeSpent),
+		zap.Any("task list", tasks),
+	)
+	return timeSpent, tasks
+}
+
 // TODO:: add error processing
 func (d *Dao) Close() {
 	d.db.Close()

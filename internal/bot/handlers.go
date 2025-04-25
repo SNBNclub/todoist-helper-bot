@@ -2,8 +2,10 @@ package tgbot
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strconv"
+	"sync"
 
 	"example.com/bot/internal/logger"
 	"example.com/bot/internal/models"
@@ -14,10 +16,9 @@ import (
 )
 
 const (
-	pattern       = `^(?P<hours_10>\d+)(?P<hours_1>\d+):(?P<mins_10>\d+)(?P<mins_1>\d+)`
+	pattern       = `^(?P<hours_10>\d+)(?P<hours_1>\d+)(?P<mins_10>\d+)(?P<mins_1>\d+)`
 	noActionState = iota
 	todoistRegisteringState
-	TodoistRegfinishState
 	waitingForTimeToTrackState
 )
 
@@ -25,6 +26,7 @@ type TelegramBotHandlers struct {
 	// r       DaoInterface
 	r       *repository.Dao
 	storage *repository.LocalStorage
+	mes     sync.Map
 }
 
 // type DaoInterface interface {
@@ -49,17 +51,17 @@ func (th *TelegramBotHandlers) defaultHandler(ctx context.Context, b *bot.Bot, u
 		return
 	}
 	chatID := update.Message.Chat.ID
-	state := th.storage.GetStatus(chatID)
-	// logger.Log.Debug("Get status")
-	switch state {
-	case waitingForTimeToTrackState:
+	if update.Message.ReplyToMessage != nil {
 		if update.Message.Text == "/ignore_task" {
 			b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: chatID,
 				Text:   "OK, no tracking for this task",
 			})
-			th.storage.SetStatus(chatID, noActionState)
-		} else {
+			return
+		}
+		val, ok := th.mes.Load(update.Message.ReplyToMessage.ID)
+		if ok {
+			val := val.(models.WebHookParsed)
 			r := regexp.MustCompile(pattern)
 			matches := r.FindStringSubmatch(update.Message.Text)
 			if matches == nil {
@@ -80,39 +82,34 @@ func (th *TelegramBotHandlers) defaultHandler(ctx context.Context, b *bot.Bot, u
 				}
 			}
 			timeSpent := uint32(0)
-			for key, val := range result {
+			for key, value := range result {
 				switch key {
 				case "hours_10":
-					timeSpent += val * 600
+					timeSpent += value * 600
 				case "hours_1":
-					timeSpent += val * 60
+					timeSpent += value * 60
 				case "mins_10":
-					timeSpent += val * 10
+					timeSpent += value * 10
 				case "mins_1":
-					timeSpent += val
+					timeSpent += value
 				}
 			}
-
+			val.TimeSpent = timeSpent
 			b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: chatID,
-				Text:   "Task succesfully tracked",
+				Text:   fmt.Sprintf("Task: %s succesfully tracked: %d", val.Task, val.TimeSpent),
 			})
-			th.storage.SetStatus(chatID, noActionState)
-			// write to queue to make send next task
+			th.r.StoreTaskTracked(ctx, chatID, val)
+			th.mes.Delete(update.Message.ReplyToMessage.ID)
 		}
+	}
+	state := th.storage.GetStatus(chatID)
+	switch state {
 	case todoistRegisteringState:
-
 		if update.Message.Text == "/cancel" {
 			b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: chatID,
 				Text:   "Finish reg later",
-			})
-			th.storage.SetStatus(chatID, noActionState)
-		} else if update.Message.Text == "/regfinish" {
-			// TODO :: deeplinks doesn't work.
-			b.SendMessage(ctx, &bot.SendMessageParams{
-				ChatID: chatID,
-				Text:   "Congrats, you finish registration part",
 			})
 			th.storage.SetStatus(chatID, noActionState)
 		} else {
@@ -121,11 +118,6 @@ func (th *TelegramBotHandlers) defaultHandler(ctx context.Context, b *bot.Bot, u
 				Text:   "Use /cancel or finish the reg",
 			})
 		}
-	case TodoistRegfinishState:
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text:   "Congrats, you finish registration part",
-		})
 	}
 }
 
@@ -164,9 +156,15 @@ func (th *TelegramBotHandlers) helpHandler(ctx context.Context, b *bot.Bot, upda
 }
 
 func (th *TelegramBotHandlers) statsHandler(ctx context.Context, b *bot.Bot, update *m.Update) {
+	chatID := update.Message.Chat.ID
+	timeSpent, tasks := th.r.GetUserStats(ctx, chatID)
+	res := fmt.Sprintf("You spent: %d\n", timeSpent)
+	for _, t := range tasks {
+		res += fmt.Sprintf("Task: %s - %d\n", t.Task, t.TimeSpent)
+	}
 	b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
-		Text:   "become later",
+		Text:   res,
 	})
 }
 

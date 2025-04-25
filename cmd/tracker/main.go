@@ -41,13 +41,14 @@ func main() {
 	storage := repository.NewLocalStorage()
 
 	ch := make(chan models.WebHookParsed)
+	authNotificatioins := make(chan models.AuthNotification)
 
-	ah := handler.NewAuthHandler(cfg.APP_CLIENT_ID, cfg.APP_CLIENT_SECRET, r, storage)
+	ah := handler.NewAuthHandler(cfg.APP_CLIENT_ID, cfg.APP_CLIENT_SECRET, authNotificatioins, r, storage)
 	wh := handler.NewWebHookHandler(ch)
 	srv := handler.NewService(ah, wh)
 
 	tgBotHandlers := tgbot.NewTgHandlers(r, storage)
-	b, err := tgbot.New(cfg.TELEGRAM_APITOKEN, dbh, tgBotHandlers, ch)
+	b, err := tgbot.New(cfg.TELEGRAM_APITOKEN, dbh, tgBotHandlers, authNotificatioins, ch)
 	if err != nil {
 		panic(err)
 	}

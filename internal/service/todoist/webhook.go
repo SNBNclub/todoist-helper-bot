@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"sync"
 
+	"example.com/bot/internal/logger"
 	l "example.com/bot/internal/logger"
 	"example.com/bot/internal/models"
 	"go.uber.org/zap"
@@ -15,7 +16,7 @@ import (
 
 const (
 	itemUpdateEvent      = "item:completed"
-	regexpTimeLogPattern = `^@log(?P<hours_10>\d+)(?P<hours_1>\d+)(?P<mins_10>\d+)(?P<mins_1>\d+)$`
+	regexpTimeLogPattern = `^log(?P<hours_10>\d+)(?P<hours_1>\d+)(?P<mins_10>\d+)(?P<mins_1>\d+)$`
 )
 
 type WebHookHandler struct {
@@ -71,6 +72,7 @@ func (wh *WebHookHandler) processWebHook(req *models.WebHookRequest) {
 	defer wh.wg.Done()
 
 	if req.EventName != itemUpdateEvent {
+		logger.Log.Debug("wtf")
 		return
 	}
 
@@ -80,10 +82,15 @@ func (wh *WebHookHandler) processWebHook(req *models.WebHookRequest) {
 		AskTime:   false,
 	}
 
-	task, ok := req.EventData.(models.Task)
-	if !ok {
+	task := &models.Task{}
+	err := json.Unmarshal(req.EventData, &task)
+	if err != nil {
+		logger.Log.Error("error in unmarshaling",
+			zap.Error(err),
+		)
 		return
 	}
+
 	wp.Task = task.Content
 	if task.Duration != nil {
 		switch task.Duration.Unit {
@@ -92,18 +99,21 @@ func (wh *WebHookHandler) processWebHook(req *models.WebHookRequest) {
 		case "day":
 			wp.TimeSpent += uint32(task.Duration.Amount) * 24 * 60
 		}
+		logger.Log.Debug("wirte to chan")
 		wh.u <- wp
 		return
 	}
 
 	if len(task.Labels) == 0 {
+		logger.Log.Debug("impossible")
 		return
 	}
 
 	var matches []string
 	for _, label := range task.Labels {
-		if label == "@track" {
+		if label == "track" {
 			wp.AskTime = true
+			logger.Log.Debug("wirte to chan")
 			wh.u <- wp
 			return
 		}
@@ -141,6 +151,6 @@ func (wh *WebHookHandler) processWebHook(req *models.WebHookRequest) {
 			wp.TimeSpent += val
 		}
 	}
-
+	logger.Log.Debug("wirte to chan")
 	wh.u <- wp
 }

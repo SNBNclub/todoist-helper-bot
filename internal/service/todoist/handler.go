@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"sync"
 
-	tgbot "example.com/bot/internal/bot"
 	"example.com/bot/internal/logger"
 	"example.com/bot/internal/models"
 	"example.com/bot/internal/repository"
@@ -26,18 +25,20 @@ const (
 type AuthHandler struct {
 	queryParams url.Values
 
-	r       *repository.Dao
-	storage *repository.LocalStorage
+	botNotifier chan<- models.AuthNotification
+	r           *repository.Dao
+	storage     *repository.LocalStorage
 }
 
-func NewAuthHandler(clientID, clientSecret string, r *repository.Dao, storage *repository.LocalStorage) *AuthHandler {
+func NewAuthHandler(clientID, clientSecret string, botNotificatioinsChan chan<- models.AuthNotification, r *repository.Dao, storage *repository.LocalStorage) *AuthHandler {
 	return &AuthHandler{
 		queryParams: url.Values{
 			"client_id":     {clientID},
 			"client_secret": {clientSecret},
 		},
-		r:       r,
-		storage: storage,
+		botNotifier: botNotificatioinsChan,
+		r:           r,
+		storage:     storage,
 	}
 }
 
@@ -68,11 +69,14 @@ func (ah *AuthHandler) handleOAuth(w http.ResponseWriter, r *http.Request) {
 		zap.Int("chatID", chatID),
 	)
 
+	// TODO :: try to set cookie httponly, secure
 	http.SetCookie(w, &http.Cookie{
 		Name:   "oauth_state",
 		Value:  state,
 		Path:   "/",
 		MaxAge: 300,
+		// HttpOnly: true,
+		// Secure: true,
 	})
 	logger.Log.Debug("set cookie")
 
@@ -148,10 +152,11 @@ func (ah *AuthHandler) handleCode(w http.ResponseWriter, r *http.Request) {
 	ah.r.AddTodoistUser(context.Background(), id, name)
 	ah.r.AddUserId(context.Background(), int64(chatID), id)
 
-	// TODO :: deeplink to tgbot redirect
-	// http.Redirect(w, r, "t.me/evdocim_test_bot?regfinish=XXXX", http.StatusSeeOther)
-	// TODO :: awfull, fix
-	ah.storage.SetStatus(int64(chatID), tgbot.TodoistRegfinishState)
+	ah.botNotifier <- models.AuthNotification{
+		ChatID:     int64(chatID),
+		Successful: true,
+	}
+	http.Redirect(w, r, "/auth/auth_finish", http.StatusSeeOther)
 }
 
 func handleMain(w http.ResponseWriter, r *http.Request) {
@@ -207,6 +212,7 @@ func NewService(authHandler *AuthHandler, webhookHandler *WebHookHandler) *Servi
 	}
 }
 
+// TODO :: hide auth finish page
 func handleAuthFinish(w http.ResponseWriter, r *http.Request) {
 	html := `
     <!DOCTYPE html>
@@ -222,9 +228,9 @@ func handleAuthFinish(w http.ResponseWriter, r *http.Request) {
         </style>
     </head>
     <body>
-        <div class="success">✅ Authentication Successful</div>
+        <div class="success">Authentication Successful</div>
         <div class="message">Your Todoist account has been linked successfully.</div>
-        <a class="button" href="tg://resolve?domain=your_bot_username">Return to Bot</a>
+        <a class="button" href="https://t.me/evdocim_test_bot">Return to Bot</a>
     </body>
     </html>
     `

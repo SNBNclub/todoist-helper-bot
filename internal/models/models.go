@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type TgUser struct {
 	ChatID int64
@@ -12,14 +15,25 @@ type Token struct {
 	TokenType   string `json:"token_type"`
 }
 
+type TaskShow struct {
+	Task      string
+	TimeSpent int64
+}
+
+type AuthNotification struct {
+	ChatID     int64
+	Successful bool
+	// TODO :: add error to make user know what happend in bad notification
+}
+
 type WebHookRequest struct {
-	EventName      string      `json:"event_name"`
-	UserID         string      `json:"user_id"`
-	EventData      interface{} `json:"event_data"` // Use `interface{}` if the structure of event_data is dynamic
-	Version        string      `json:"version"`
-	Initiator      Initiator   `json:"initiator"`
-	TriggeredAt    string      `json:"triggered_at"`
-	EventDataExtra interface{} `json:"event_data_extra"` // Use `interface{}` if the structure of event_data_extra is dynamic
+	EventName      string          `json:"event_name"`
+	UserID         string          `json:"user_id"`
+	EventData      json.RawMessage `json:"event_data"` // Use `interface{}` if the structure of event_data is dynamic
+	Version        string          `json:"version"`
+	Initiator      Initiator       `json:"initiator"`
+	TriggeredAt    string          `json:"triggered_at"`
+	EventDataExtra json.RawMessage `json:"event_data_extra"` // Use `interface{}` if the structure of event_data_extra is dynamic
 }
 
 type Task struct {

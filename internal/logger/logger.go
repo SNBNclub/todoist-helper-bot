@@ -47,7 +47,6 @@ func getLogger() *zap.Logger {
 	}
 
 	consoleLogginLevel := zap.NewAtomicLevelAt(zapcore.DebugLevel)
-	// TODO::enable and disable logging for the web log
 	botLogginLevel := zap.NewAtomicLevelAt(zapcore.PanicLevel)
 	fileLoggingLevel := zap.NewAtomicLevelAt(zapcore.DebugLevel)
 
@@ -55,8 +54,7 @@ func getLogger() *zap.Logger {
 	http.HandleFunc("/loggin_level_bot", botLogginLevel.ServeHTTP)
 	http.HandleFunc("/logging_level_file", fileLoggingLevel.ServeHTTP)
 
-	// TODO :: another file for the file logging
-	logFile, err := os.OpenFile("app.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	logFile, err := os.OpenFile("/var/log/tracker.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0777)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to open log file: %v\n", err)
 	}
