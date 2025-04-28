@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"sync"
+	"time"
 
 	"example.com/bot/internal/logger"
 	"example.com/bot/internal/models"
@@ -14,80 +14,70 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-type LocalStorage struct {
-	tokens        sync.Map
-	states        sync.Map
-	botUserStates sync.Map
-}
-
-func NewLocalStorage() *LocalStorage {
-	return &LocalStorage{
-		tokens:        sync.Map{},
-		states:        sync.Map{},
-		botUserStates: sync.Map{},
-	}
-}
-
-func (l *LocalStorage) StoreToken(userID, token string) {
-	l.tokens.Store(userID, token)
-}
-
-func (l *LocalStorage) GetToken(userID string) string {
-	val, ok := l.tokens.Load(userID)
-	if !ok {
-		return ""
-	}
-	return val.(string)
-}
-
-func (l *LocalStorage) StoreState(state string, chatID int) {
-	l.states.Store(state, chatID)
-	// l.states.
-}
-
-func (l *LocalStorage) GetChatID(state string) int {
-	val, loaded := l.states.LoadAndDelete(state)
-	if !loaded {
-		return -1
-	}
-	return val.(int)
-}
-
-func (l *LocalStorage) SetStatus(chatID int64, status int) {
-	l.botUserStates.Store(chatID, status)
-}
-
-func (l *LocalStorage) GetStatus(chatID int64) int {
-	val, ok := l.botUserStates.Load(chatID)
-	if !ok {
-		return -1
-	}
-	return val.(int)
-}
-
 type Dao struct {
 	db *sql.DB
 }
 
-func New(ctx context.Context, host, port, dbName, user, password string) *Dao {
-	constring := fmt.Sprintf("host=%s port=%s database=%s user=%s password=%s", host, port, dbName, user, password)
-	db, err := sql.Open("pgx", constring)
+type DBConfig struct {
+	Host     string
+	Port     string
+	DBName   string
+	User     string
+	Password string
+	MaxConns int
+	MaxIdle  int
+	MaxLife  time.Duration
+}
 
+func New(ctx context.Context, config DBConfig) (*Dao, error) {
+	connStr := fmt.Sprintf(
+		"host=%s port=%s dbname=%s user=%s password=%s sslmode=disable",
+		config.Host, config.Port, config.DBName, config.User, config.Password,
+	)
+
+	db, err := sql.Open("pgx", connStr)
 	if err != nil {
-		logger.Log.Error("Error in creating database connection",
-			zap.String("dsn", constring),
+		logger.Log.Error("Failed to create database connection",
+			zap.String("host", config.Host),
+			zap.String("dbname", config.DBName),
 			zap.Error(err),
 		)
+		return nil, fmt.Errorf("failed to create database connection: %w", err)
 	}
+
+	if config.MaxConns > 0 {
+		db.SetMaxOpenConns(config.MaxConns)
+	} else {
+		db.SetMaxOpenConns(10)
+	}
+
+	if config.MaxIdle > 0 {
+		db.SetMaxIdleConns(config.MaxIdle)
+	} else {
+		db.SetMaxIdleConns(5)
+	}
+
+	if config.MaxLife > 0 {
+		db.SetConnMaxLifetime(config.MaxLife)
+	} else {
+		db.SetConnMaxLifetime(5 * time.Minute)
+	}
+
 	if err = db.PingContext(ctx); err != nil {
-		logger.Log.Error("Error while pinging database",
+		logger.Log.Error("Failed to ping database",
+			zap.String("host", config.Host),
+			zap.String("dbname", config.DBName),
 			zap.Error(err),
 		)
-		db.Close()
-		return nil
+		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
-	logger.Log.Debug("Creating dao object successfylly")
-	return &Dao{db: db}
+
+	logger.Log.Info("Database connection established successfully",
+		zap.String("host", config.Host),
+		zap.String("dbname", config.DBName),
+	)
+
+	return &Dao{db: db}, nil
 }
 
 func (d *Dao) CreateUser(ctx context.Context, u *models.TgUser) (bool, error) {
@@ -173,61 +163,124 @@ func (d *Dao) AddUserId(ctx context.Context, chat_id int64, todoist_id string) e
 	return nil
 }
 
-func (d *Dao) GetChatIDByTodoist(ctx context.Context, todoistUserID string) int64 {
+func (d *Dao) GetChatIDByTodoist(ctx context.Context, todoistUserID string) (int64, error) {
 	query, err := tools.LoadQuery("get_chat_id_by_todoist_id.sql")
 	if err != nil {
-		panic(err)
+		logger.Log.Error("Failed to load query",
+			zap.String("query", "get_chat_id_by_todoist_id.sql"),
+			zap.Error(err))
+		return 0, fmt.Errorf("failed to load query: %w", err)
 	}
+
 	row := d.db.QueryRowContext(ctx, query, todoistUserID)
 	if row.Err() != nil {
-		panic(row.Err())
+		logger.Log.Error("Database error while getting chat ID",
+			zap.String("todoistUserID", todoistUserID),
+			zap.Error(row.Err()))
+		return 0, fmt.Errorf("database error while getting chat ID: %w", row.Err())
 	}
+
 	var chatID int64
 	err = row.Scan(&chatID)
 	if err != nil {
-		panic(err)
+		if err == sql.ErrNoRows {
+			logger.Log.Warn("No chat ID found for Todoist user",
+				zap.String("todoistUserID", todoistUserID))
+			return 0, nil
+		}
+		logger.Log.Error("Error scanning chat ID",
+			zap.String("todoistUserID", todoistUserID),
+			zap.Error(err))
+		return 0, fmt.Errorf("error scanning chat ID: %w", err)
 	}
-	return chatID
+
+	return chatID, nil
 }
 
-func (d *Dao) StoreTaskTracked(ctx context.Context, chatID int64, task models.WebHookParsed) {
+func (d *Dao) StoreTaskTracked(ctx context.Context, chatID int64, task models.WebHookParsed) error {
 	query, err := tools.LoadQuery("store_task_recording.sql")
 	if err != nil {
-		panic(err)
+		logger.Log.Error("Failed to load SQL query",
+			zap.String("query", "store_task_recording.sql"),
+			zap.Error(err))
+		return fmt.Errorf("failed to load query: %w", err)
 	}
+
 	_, err = d.db.ExecContext(ctx, query, chatID, task.Task, task.TimeSpent)
 	if err != nil {
-		panic(err)
+		logger.Log.Error("Failed to store task recording",
+			zap.Int64("chatID", chatID),
+			zap.String("task", task.Task),
+			zap.Uint32("timeSpent", task.TimeSpent),
+			zap.Error(err))
+		return fmt.Errorf("failed to store task recording: %w", err)
 	}
+
+	return nil
 }
 
-func (d *Dao) GetUserStats(ctx context.Context, chatID int64) (int64, []models.TaskShow) {
+func (d *Dao) GetUserStats(ctx context.Context, chatID int64) (int64, []models.TaskShow, error) {
 	query, err := tools.LoadQuery("get_stats.sql")
 	if err != nil {
-		panic(err)
+		logger.Log.Error("Failed to load SQL query",
+			zap.String("query", "get_stats.sql"),
+			zap.Error(err))
+		return 0, nil, fmt.Errorf("failed to load query: %w", err)
 	}
-	rows, err := d.db.Query(query, chatID)
+
+	rows, err := d.db.QueryContext(ctx, query, chatID)
 	if err != nil {
-		panic(err)
+		logger.Log.Error("Failed to query user stats",
+			zap.Int64("chatID", chatID),
+			zap.Error(err))
+		return 0, nil, fmt.Errorf("failed to query user stats: %w", err)
 	}
+	defer rows.Close()
+
 	var timeSpent int64
 	tasks := make([]models.TaskShow, 0, 100)
+
 	for rows.Next() {
 		tt := models.TaskShow{}
 		err = rows.Scan(&timeSpent, &tt.Task, &tt.TimeSpent)
 		if err != nil {
-			panic(err)
+			logger.Log.Error("Failed to scan row data",
+				zap.Int64("chatID", chatID),
+				zap.Error(err))
+			return 0, nil, fmt.Errorf("failed to scan row data: %w", err)
 		}
 		tasks = append(tasks, tt)
 	}
-	logger.Log.Debug("get stats",
-		zap.Int64("timeSpentSUm", timeSpent),
-		zap.Any("task list", tasks),
+
+	if err = rows.Err(); err != nil {
+		logger.Log.Error("Row iteration error",
+			zap.Int64("chatID", chatID),
+			zap.Error(err))
+		return 0, nil, fmt.Errorf("row iteration error: %w", err)
+	}
+
+	logger.Log.Debug("Retrieved user stats",
+		zap.Int64("chatID", chatID),
+		zap.Int64("totalTimeSpent", timeSpent),
+		zap.Int("taskCount", len(tasks)),
 	)
-	return timeSpent, tasks
+
+	return timeSpent, tasks, nil
 }
 
-// TODO:: add error processing
-func (d *Dao) Close() {
-	d.db.Close()
+func (d *Dao) Close() error {
+	if d.db != nil {
+		err := d.db.Close()
+		if err != nil {
+			logger.Log.Error("Error closing database connection", zap.Error(err))
+			return fmt.Errorf("failed to close database connection: %w", err)
+		}
+	}
+	return nil
 }
+
+const (
+	NoActionState = iota
+	TodoistRegisteringState
+	WaitingForTimeToTrackState
+)

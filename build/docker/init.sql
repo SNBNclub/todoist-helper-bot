@@ -14,6 +14,7 @@ create table if not exists stat (
     FOREIGN KEY (chat_id) REFERENCES chats(id)
 );
 
+-- TODO :: add date of tasks
 create table if not exists tasks (
     chat_id BIGINT NOT NULL,
     content varchar(1000) not null,

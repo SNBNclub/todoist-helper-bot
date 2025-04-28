@@ -3,7 +3,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -22,19 +21,27 @@ type Config struct {
 	APP_CLIENT_SECRET string
 }
 
-// TODO how to fix it to work from any dir
 func LoadConfig() (*Config, error) {
-	currentDir, err := os.Getwd()
-	if err != nil {
-		return nil, err
+	possibleLocations := []string{
+		".env",
+		filepath.Join("..", ".env"),
+		filepath.Join("..", "..", ".env"),
 	}
-	cmdDir := filepath.Dir(currentDir) // ../cmd
-	modDir := filepath.Dir(cmdDir)     // ..
-	log.Printf("%s\n", modDir)
-	err = godotenv.Load(filepath.Join(modDir, ".env"))
-	if err != nil {
-		return nil, err
+
+	var loadErr error
+	for _, location := range possibleLocations {
+		err := godotenv.Load(location)
+		if err == nil {
+			loadErr = nil
+			break
+		}
+		loadErr = err
 	}
+
+	if loadErr != nil {
+		return nil, fmt.Errorf("could not load environment variables: %w", loadErr)
+	}
+
 	cfg := &Config{
 		DB_HOST:           os.Getenv("DB_HOST"),
 		DB_PORT:           os.Getenv("DB_PORT"),
@@ -45,17 +52,16 @@ func LoadConfig() (*Config, error) {
 		APP_CLIENT_ID:     os.Getenv("TODOIST_CLIENT_ID"),
 		APP_CLIENT_SECRET: os.Getenv("TODOIST_CLIENT_SECRET"),
 	}
-	err = validateStruct(*cfg)
+
+	err := validateStruct(*cfg)
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("%v\n", cfg)
+
 	return cfg, nil
 }
 
-// TODO work with errrors
-// TODO delete get from
-// get from here - https://medium.com/@anajankow/fast-check-if-all-struct-fields-are-set-in-golang-bba1917213d2
+// validateStruct checks if all fields in the struct are set
 func validateStruct(s any) (err error) {
 	structType := reflect.TypeOf(s)
 	if structType.Kind() != reflect.Struct {
@@ -70,7 +76,7 @@ func validateStruct(s any) (err error) {
 		fieldName := structType.Field(i).Name
 
 		if field.IsZero() || !field.IsValid() {
-			err = fmt.Errorf("%v%s in not set; ", err, fieldName)
+			err = fmt.Errorf("%v%s is not set; ", err, fieldName)
 		}
 	}
 	return err

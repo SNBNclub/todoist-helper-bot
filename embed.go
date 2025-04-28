@@ -1,4 +1,4 @@
-package embeded
+package bot
 
 import (
 	"embed"

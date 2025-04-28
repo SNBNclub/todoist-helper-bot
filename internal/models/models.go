@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -23,17 +24,28 @@ type TaskShow struct {
 type AuthNotification struct {
 	ChatID     int64
 	Successful bool
-	// TODO :: add error to make user know what happend in bad notification
+	Error      error
+	Type       int
 }
 
 type WebHookRequest struct {
 	EventName      string          `json:"event_name"`
 	UserID         string          `json:"user_id"`
-	EventData      json.RawMessage `json:"event_data"` // Use `interface{}` if the structure of event_data is dynamic
+	EventData      json.RawMessage `json:"event_data"`
 	Version        string          `json:"version"`
 	Initiator      Initiator       `json:"initiator"`
 	TriggeredAt    string          `json:"triggered_at"`
-	EventDataExtra json.RawMessage `json:"event_data_extra"` // Use `interface{}` if the structure of event_data_extra is dynamic
+	EventDataExtra json.RawMessage `json:"event_data_extra"`
+}
+
+// GetTaskData parses the EventData field into a Task struct
+func (wr *WebHookRequest) GetTaskData() (Task, error) {
+	var task Task
+	err := json.Unmarshal(wr.EventData, &task)
+	if err != nil {
+		return Task{}, fmt.Errorf("failed to unmarshal task data: %w", err)
+	}
+	return task, nil
 }
 
 type Task struct {
@@ -82,22 +94,6 @@ type Initiator struct {
 type Duration struct {
 	Amount int    `json:"amount"`
 	Unit   string `json:"unit"`
-}
-
-// probably unneeded
-type UpdateItemRequest struct {
-	ID             string                 `json:"id"`
-	Content        string                 `json:"content"`
-	Description    string                 `json:"description"`
-	Due            map[string]interface{} `json:"due"`      // Use map[string]interface{} if the structure is dynamic
-	Deadline       map[string]interface{} `json:"deadline"` // Use map[string]interface{} if the structure is dynamic
-	Priority       int                    `json:"priority"`
-	Collapsed      bool                   `json:"collapsed"`
-	Labels         []string               `json:"labels"`
-	AssignedByUID  string                 `json:"assigned_by_uid"`
-	ResponsibleUID string                 `json:"responsible_uid"`
-	DayOrder       int                    `json:"day_order"`
-	Duration       map[string]interface{} `json:"duration"` // Use map[string]interface{} if the structure is dynamic
 }
 
 type InitSyncReq struct {

@@ -5,10 +5,14 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"sync"
+	"time"
 
 	"example.com/bot/internal/logger"
 	"example.com/bot/internal/models"
@@ -19,99 +23,143 @@ import (
 const (
 	baseAuthURL     = "https://todoist.com/oauth/authorize"
 	baseTokenGetURL = "https://todoist.com/oauth/access_token"
-	SyncURL         = "https://api.todoist.com/api/v1/sync?sync_token=*&resource_types=[\"user\"]"
+	syncURL         = "https://api.todoist.com/api/v1/sync?sync_token=*&resource_types=[\"user\"]"
+	defaultScope    = "data:read_write,data:delete"
+	authTimeout     = 15 * time.Minute
+	cookieMaxAge    = 900
+)
+
+type AuthNotificationType int
+
+const (
+	AuthSuccess AuthNotificationType = iota
+	AuthTimeout
+	AuthError
 )
 
 type AuthHandler struct {
-	queryParams url.Values
-
-	botNotifier chan<- models.AuthNotification
-	r           *repository.Dao
-	storage     *repository.LocalStorage
+	queryParams  url.Values
+	botNotifier  chan<- models.AuthNotification
+	r            *repository.Dao
+	storage      *repository.LocalStorage
+	authTimeout  time.Duration
+	secureCookie bool
 }
 
-func NewAuthHandler(clientID, clientSecret string, botNotificatioinsChan chan<- models.AuthNotification, r *repository.Dao, storage *repository.LocalStorage) *AuthHandler {
+func NewAuthHandler(clientID, clientSecret string, botNotificationsChan chan<- models.AuthNotification, r *repository.Dao, storage *repository.LocalStorage) *AuthHandler {
 	return &AuthHandler{
 		queryParams: url.Values{
 			"client_id":     {clientID},
 			"client_secret": {clientSecret},
 		},
-		botNotifier: botNotificatioinsChan,
-		r:           r,
-		storage:     storage,
+		botNotifier:  botNotificationsChan,
+		r:            r,
+		storage:      storage,
+		authTimeout:  authTimeout,
+		secureCookie: true,
 	}
 }
 
-func genRandomState() (string, error) {
-	b := make([]byte, 16)
-	_, err := rand.Read(b)
-	if err != nil {
-		return "", err
+func generateRandomState() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("failed to generate random state: %w", err)
 	}
 	return base64.URLEncoding.EncodeToString(b), nil
 }
 
 func (ah *AuthHandler) handleOAuth(w http.ResponseWriter, r *http.Request) {
-	chatID, err := strconv.Atoi(r.URL.Query().Get("chat_id"))
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	state, err := genRandomState()
-	// TODO :: status
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	logger.Log.Debug("state & chat_id",
-		zap.String("state", state),
-		zap.Int("chatID", chatID),
+	log := logger.Log.With(
+		zap.String("handler", "handleOAuth"),
+		zap.String("remote_addr", r.RemoteAddr),
 	)
 
-	// TODO :: try to set cookie httponly, secure
-	http.SetCookie(w, &http.Cookie{
-		Name:   "oauth_state",
-		Value:  state,
-		Path:   "/",
-		MaxAge: 300,
-		// HttpOnly: true,
-		// Secure: true,
-	})
-	logger.Log.Debug("set cookie")
-
-	if ah.storage == nil {
-		panic("storage is nill")
+	chatIDStr := r.URL.Query().Get("chat_id")
+	if chatIDStr == "" {
+		log.Warn("Missing chat_id parameter")
+		http.Error(w, "Missing chat_id parameter", http.StatusBadRequest)
+		return
 	}
 
-	ah.storage.StoreState(state, chatID)
+	chatID, err := strconv.ParseInt(chatIDStr, 10, 64)
+	if err != nil {
+		log.Error("Invalid chat_id parameter",
+			zap.String("chat_id", chatIDStr),
+			zap.Error(err),
+		)
+		http.Error(w, "Invalid chat_id parameter", http.StatusBadRequest)
+		return
+	}
 
-	logger.Log.Debug("state stored")
+	state, err := generateRandomState()
+	if err != nil {
+		log.Error("Failed to generate random state", zap.Error(err))
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
 
-	authLink := baseAuthURL + "?" + ah.queryParams.Encode() + "&scope=data:read_write,data:delete" + "&state=" + state
+	log.Debug("Generated OAuth state",
+		zap.String("state", state),
+		zap.Int64("chatID", chatID),
+	)
+
+	ah.storage.StoreState(state, int(chatID))
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "oauth_state",
+		Value:    state,
+		Path:     "/",
+		MaxAge:   cookieMaxAge,
+		HttpOnly: true,
+		Secure:   ah.secureCookie,
+		SameSite: http.SameSiteLaxMode,
+	})
 
 	queryParams := ah.queryParams
-	queryParams.Add("scope", "scope=data:read_write,data:delete")
+	queryParams.Add("scope", defaultScope)
 	queryParams.Add("state", state)
 
-	// authLink := baseAuthURL + "?" + queryParams.Encode()
+	authURL := baseAuthURL + "?" + queryParams.Encode()
 
-	logger.Log.Debug("Auth url",
-		zap.String("URL", authLink),
+	log.Info("Redirecting to Todoist OAuth",
+		zap.String("auth_url", authURL),
+		zap.Int64("chat_id", chatID),
 	)
 
-	http.Redirect(w, r, authLink, http.StatusSeeOther)
+	go ah.setAuthTimeout(state, chatID)
+
+	http.Redirect(w, r, authURL, http.StatusSeeOther)
+}
+
+func (ah *AuthHandler) setAuthTimeout(state string, chatID int64) {
+	time.Sleep(ah.authTimeout)
+	if ah.storage.IsStateValid(state, int(chatID)) {
+		ah.botNotifier <- models.AuthNotification{
+			ChatID:     chatID,
+			Successful: false,
+			Error:      errors.New("authentication timeout"),
+			Type:       int(AuthTimeout),
+		}
+		ah.storage.InvalidateState(state, int(chatID))
+	}
 }
 
 func (ah *AuthHandler) handleCode(w http.ResponseWriter, r *http.Request) {
+	log := logger.Log.With(
+		zap.String("handler", "handleCode"),
+		zap.String("remote_addr", r.RemoteAddr),
+	)
+
 	cookie, err := r.Cookie("oauth_state")
 	if err != nil {
+		log.Error("State cookie not found", zap.Error(err))
 		http.Error(w, "State cookie not found", http.StatusBadRequest)
 		return
 	}
 
 	state := r.URL.Query().Get("state")
 	if state == "" || state != cookie.Value {
+		log.Error("State mismatch, possible CSRF attack")
 		http.Error(w, "State mismatch, possible CSRF attack", http.StatusBadRequest)
 		return
 	}
@@ -125,14 +173,18 @@ func (ah *AuthHandler) handleCode(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := http.Post(url, "", nil)
 	if err != nil {
-		panic(err)
+		log.Error("Failed to exchange code for token", zap.Error(err))
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
 	}
 	req := models.Token{}
 	defer resp.Body.Close()
 	if err := json.NewDecoder(resp.Body).Decode(&req); err != nil {
-		// rBytes, _ := io.ReadAll(r.Body)
-		// log.Fatalf("unexpected req body: %s\n", string(rBytes))
-		w.WriteHeader(http.StatusBadRequest)
+		rBytes, _ := io.ReadAll(resp.Body)
+		log.Error("Unexpected request body",
+			zap.String("body", string(rBytes)),
+			zap.Error(err))
+		http.Error(w, "Failed to decode token response", http.StatusInternalServerError)
 		return
 	}
 
@@ -142,7 +194,9 @@ func (ah *AuthHandler) handleCode(w http.ResponseWriter, r *http.Request) {
 		zap.String("todoist_name", name),
 	)
 	if err != nil {
-		panic(err)
+		log.Error("Failed to get user ID", zap.Error(err))
+		http.Error(w, "Failed to get user ID", http.StatusInternalServerError)
+		return
 	}
 
 	chatID := ah.storage.GetChatID(state)
@@ -165,33 +219,36 @@ func handleMain(w http.ResponseWriter, r *http.Request) {
 }
 
 func getUserID(token string) (string, string, error) {
-	client := &http.Client{}
-	req, err := http.NewRequest("POST", SyncURL, nil)
-	if err != nil {
-		panic(err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	// log.Println("performing request for getting id")
-	resp, err := client.Do(req)
-	if resp.StatusCode != http.StatusOK {
-		// log.Println(resp.StatusCode)
-		return "", "", nil
-	}
-	if err != nil {
-		panic(err)
+	client := &http.Client{
+		Timeout: 10 * time.Second,
 	}
 
-	// res, err := io.ReadAll(resp.Body)
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// log.Printf("resp body: %s\n", string(res))
-	initReq := models.InitSyncReq{}
-	defer resp.Body.Close()
-	if err := json.NewDecoder(resp.Body).Decode(&initReq); err != nil {
-		// log.Println(err.Error())
+	req, err := http.NewRequest("POST", syncURL, nil)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create request: %w", err)
 	}
-	// log.Println(initReq)
+
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	var initReq models.InitSyncReq
+	if err := json.NewDecoder(resp.Body).Decode(&initReq); err != nil {
+		return "", "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if initReq.User.ID == "" {
+		return "", "", errors.New("user ID not found in response")
+	}
+
 	return initReq.User.ID, initReq.User.FullName, nil
 }
 
@@ -203,12 +260,14 @@ type Service struct {
 }
 
 func NewService(authHandler *AuthHandler, webhookHandler *WebHookHandler) *Service {
+	srv := &http.Server{
+		Addr: ":8080",
+	}
+
 	return &Service{
-		srv: &http.Server{
-			Addr: ":8080",
-		},
-		h: authHandler,
-		w: webhookHandler,
+		h:   authHandler,
+		w:   webhookHandler,
+		srv: srv,
 	}
 }
 
@@ -239,20 +298,27 @@ func handleAuthFinish(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) Start(wg *sync.WaitGroup, ctx context.Context) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/auth", s.h.handleOAuth)
+	mux.HandleFunc("/auth/callback", s.h.handleCode)
+	mux.HandleFunc("/webhook", s.w.handleHTTP)
+	mux.HandleFunc("/main", handleMain)
+	mux.HandleFunc("/auth/auth_finish", handleAuthFinish)
 
-	http.HandleFunc("/auth", s.h.handleOAuth)
-	http.HandleFunc("/auth/callback", s.h.handleCode)
-	http.HandleFunc("/webhook", s.w.handleHTTP)
-	http.HandleFunc("/main", handleMain)
-	http.HandleFunc("/auth/auth_finish", handleAuthFinish)
+	s.srv.Handler = mux
+
+	s.srv.ReadTimeout = 10 * time.Second
+	s.srv.WriteTimeout = 10 * time.Second
+	s.srv.IdleTimeout = 120 * time.Second
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 
-		if err := s.srv.ListenAndServe(); err != http.ErrServerClosed {
-			// log error
-			// log.Fatalf("ListenAndServe(): %v", err)
+		logger.Log.Info("Starting HTTP server", zap.String("address", s.srv.Addr))
+
+		if err := s.srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Log.Error("HTTP server error", zap.Error(err))
 		}
 	}()
 
@@ -261,8 +327,15 @@ func (s *Service) Start(wg *sync.WaitGroup, ctx context.Context) {
 		defer wg.Done()
 
 		<-ctx.Done()
-		if err := s.srv.Shutdown(ctx); err != nil {
-			panic(err)
+		logger.Log.Info("Shutting down HTTP server")
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		if err := s.srv.Shutdown(shutdownCtx); err != nil {
+			logger.Log.Error("HTTP server shutdown error", zap.Error(err))
 		}
+
+		logger.Log.Info("HTTP server stopped")
 	}()
 }
