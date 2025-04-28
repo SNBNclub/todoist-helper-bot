@@ -210,19 +210,25 @@ func (th *TelegramBotHandlers) startHandler(ctx context.Context, b *bot.Bot, upd
 		return
 	}
 
-	welcomeMsg := "👋 *Welcome to the Time Tracker Bot!*\n\n" +
-		"This bot helps you track time spent on your Todoist tasks.\n\n" +
+	welcomeMsg := "👋 *Welcome to the Time Tracker Bot\\!*\n\n" +
+		"This bot helps you track time spent on your Todoist tasks\\.\n\n" +
 		"To get started:\n" +
-		"1. Connect your Todoist account using /auth\n" +
-		"2. Complete tasks in Todoist with @track label or duration\n" +
-		"3. View your stats with /stats\n\n" +
-		"Type /help anytime to see available commands."
+		"1\\. Connect your Todoist account using /auth\n" +
+		"2\\. Complete tasks in Todoist with @track label or duration\n" +
+		"3\\. View your stats with /stats\n\n" +
+		"Type /help anytime to see available commands\\."
 
-	b.SendMessage(ctx, &bot.SendMessageParams{
+	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:    u.ChatID,
 		Text:      welcomeMsg,
 		ParseMode: m.ParseModeMarkdown,
 	})
+	if err != nil {
+		log.Error("Error in sending welocme message",
+			zap.Error(err),
+		)
+	}
+	log.Debug("Created new user")
 }
 
 func (th *TelegramBotHandlers) helpHandler(ctx context.Context, b *bot.Bot, update *m.Update) {
@@ -278,18 +284,21 @@ func (th *TelegramBotHandlers) statsHandler(ctx context.Context, b *bot.Bot, upd
 			timeFormatted = fmt.Sprintf("%dm", mins)
 		}
 
-		res += fmt.Sprintf("• %s - %s\n", t.Task, timeFormatted)
+		res += fmt.Sprintf("• %s \\- %s\n", t.Task, timeFormatted)
 	}
 
 	if len(tasks) > maxTasksToShow {
 		res += fmt.Sprintf("\n...and %d more tasks", len(tasks)-maxTasksToShow)
 	}
 
-	b.SendMessage(ctx, &bot.SendMessageParams{
+	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:    chatID,
 		Text:      res,
 		ParseMode: m.ParseModeMarkdown,
 	})
+	if err != nil {
+		log.Error("Error in message tabke", zap.Error(err))
+	}
 }
 
 func (th *TelegramBotHandlers) authHandler(ctx context.Context, b *bot.Bot, update *m.Update) {

@@ -124,6 +124,7 @@ func (ah *AuthHandler) handleOAuth(w http.ResponseWriter, r *http.Request) {
 	log.Info("Redirecting to Todoist OAuth",
 		zap.String("auth_url", authURL),
 		zap.Int64("chat_id", chatID),
+		zap.String("state", state),
 	)
 
 	go ah.setAuthTimeout(state, chatID)

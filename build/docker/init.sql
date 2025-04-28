@@ -15,6 +15,7 @@ create table if not exists stat (
 );
 
 -- TODO :: add date of tasks
+-- TODO :: store todoist task id as primary
 create table if not exists tasks (
     chat_id BIGINT NOT NULL,
     content varchar(1000) not null,

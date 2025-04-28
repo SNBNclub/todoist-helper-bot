@@ -163,7 +163,7 @@ func (wh *WebHookHandler) processWebHook(req *models.WebHookRequest) {
 
 	var matches []string
 	for _, label := range task.Labels {
-		if label == "@track" {
+		if label == "track" {
 			log.Info("Found @track label, asking for time tracking")
 			wp.AskTime = true
 			wh.u <- wp

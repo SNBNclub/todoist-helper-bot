@@ -38,7 +38,6 @@ type WebHookRequest struct {
 	EventDataExtra json.RawMessage `json:"event_data_extra"`
 }
 
-// GetTaskData parses the EventData field into a Task struct
 func (wr *WebHookRequest) GetTaskData() (Task, error) {
 	var task Task
 	err := json.Unmarshal(wr.EventData, &task)
@@ -136,7 +135,7 @@ type SyncUser struct {
 	IsPremium             bool      `json:"is_premium"`
 	JoinableWorkspace     any       `json:"joinable_workspace"`
 	JoinedAt              time.Time `json:"joined_at"`
-	Karma                 int       `json:"karma"`
+	Karma                 float64   `json:"karma"`
 	KarmaTrend            string    `json:"karma_trend"`
 	Lang                  string    `json:"lang"`
 	MfaEnabled            bool      `json:"mfa_enabled"`
