@@ -2,18 +2,19 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"sync"
 
-	config "example.com/bot/configs"
 	tgbot "example.com/bot/internal/bot"
+	"example.com/bot/internal/config"
+	"example.com/bot/internal/handlers"
 	"example.com/bot/internal/logger"
-	"example.com/bot/internal/models"
+	"example.com/bot/internal/migrations"
 	"example.com/bot/internal/repository"
-	handler "example.com/bot/internal/service/todoist"
-
+	"example.com/bot/internal/services"
 	"go.uber.org/zap"
 )
 
@@ -22,41 +23,67 @@ func dbh(f string, args ...any) {
 }
 
 func main() {
-	logger.Log.Debug("starting config creating")
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("could not load config: %w", err))
 	}
-	logger.Log.Debug("fnish config creating",
-		zap.Any("config", cfg),
-	)
-	logger.Log.Debug("Process",
-		zap.Int("PID:", os.Getpid()),
-	)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	r := repository.New(ctx, cfg.DB_HOST, cfg.DB_PORT, cfg.DB_NAME, cfg.DB_USER, cfg.DB_PASSWORD)
-	storage := repository.NewLocalStorage()
-
-	ch := make(chan models.WebHookParsed)
-	authNotificatioins := make(chan models.AuthNotification)
-
-	ah := handler.NewAuthHandler(cfg.APP_CLIENT_ID, cfg.APP_CLIENT_SECRET, authNotificatioins, r, storage)
-	wh := handler.NewWebHookHandler(ch)
-	srv := handler.NewService(ah, wh)
-
-	tgBotHandlers := tgbot.NewTgHandlers(r, storage)
-	b, err := tgbot.New(cfg.TELEGRAM_APITOKEN, dbh, tgBotHandlers, authNotificatioins, ch)
+	logger, err := logger.NewLogger(cfg.GetLoggerConfig())
 	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("could not create logger: %w", err))
 	}
 
-	wg := &sync.WaitGroup{}
+	err = migrations.RunMigrations(ctx, cfg.GetDBConnString(), cfg.DB_NAME, "file://storage/migrations")
+	if err != nil {
+		logger.Panic("unable to complete migrations",
+			zap.Error(err),
+		)
+	}
 
-	srv.Start(wg, ctx)
-	b.Start(wg, ctx)
+	dao, err := repository.New(ctx, cfg.GetDBConnString())
+	if err != nil {
+		logger.Panic("unable to create dao object",
+			zap.Error(err),
+		)
+	}
+
+	storage, err := repository.NewLocalStorage(ctx, cfg.REDIS_HOST, cfg.REDIS_PASSWORD, cfg.REDIS_DB)
+	if err != nil {
+		logger.Panic("unable to create local storage",
+			zap.Error(err),
+		)
+	}
+
+	webHookService, stop, err := services.NewWebHookService([]string{"localhost:9092", "localhost:9093", "localhost:9094"}, "webhook", logger)
+	if err != nil {
+		logger.Panic("unable to create webhook service",
+			zap.Error(err),
+		)
+	}
+	authHandler := handlers.NewAuthHandler(cfg.APP_CLIENT_ID, cfg.APP_CLIENT_SECRET, []string{"localhost:9092", "localhost:9093", "localhost:9094"}, "auth", dao, storage, logger)
+	webHookHandler := handlers.NewWebHookHandler(webHookService, stop, logger)
+
+	server := handlers.NewService(authHandler, webHookHandler)
+
+	tgBotService, err := tgbot.NewTgBotService(dao, storage, []string{"localhost:9092", "localhost:9093", "localhost:9094"}, "auth", "webhook", logger)
+	if err != nil {
+
+	}
+	tgBotHandlers := tgbot.NewTgBotHandlers(tgBotService, logger)
+	tgbotAPI, err := tgbot.New(cfg.TELEGRAM_APITOKEN, dbh, tgBotService, tgBotHandlers)
+	if err != nil {
+		logger.Panic("unable to create bot API",
+			zap.Error(err),
+		)
+	}
+
+	wg := sync.WaitGroup{}
+
+	tgbotAPI.Start(&wg, ctx)
+	server.Start(&wg, ctx)
 
 	wg.Wait()
 }

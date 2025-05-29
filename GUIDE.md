@@ -33,6 +33,9 @@
 ### JSON to Go models
 - [First](https://mholt.github.io/json-to-go/)
 
+### Reflect example
+- [Strcut validation](https://medium.com/@anajankow/fast-check-if-all-struct-fields-are-set-in-golang-bba1917213d2)
+
 ## Setting up own server
 - Get server
   1. Get sever with public IP. Check ip - `curl ifconfig.me`

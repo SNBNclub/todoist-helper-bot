@@ -21,8 +21,8 @@ type TaskShow struct {
 }
 
 type AuthNotification struct {
-	ChatID     int64
-	Successful bool
+	ChatID     int64 `json:"chat_id"`
+	Successful bool  `json:"successful"`
 	// TODO :: add error to make user know what happend in bad notification
 }
 
@@ -65,10 +65,10 @@ type Task struct {
 
 // TODO :: rename
 type WebHookParsed struct {
-	UserID    string
-	Task      string
-	TimeSpent uint32
-	AskTime   bool
+	UserID    string `json:"user_id"`
+	Task      string `json:"task"`
+	TimeSpent uint32 `json:"time_spent"`
+	AskTime   bool   `json:"ask_time"`
 }
 
 type Initiator struct {

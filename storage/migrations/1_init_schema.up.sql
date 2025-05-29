@@ -1,28 +1,28 @@
-create table if not exists chats (
+CREATE TABLE IF NOT EXISTS chats (
     id BIGINT PRIMARY KEY,
-    name varchar(100) NOT NULL
+    name VARCHAR(100) NOT NULL
 );
 
-create table if not exists todoist_users (
+CREATE TABLE IF NOT EXISTS todoist_users (
     id VARCHAR(100) PRIMARY KEY,
     name VARCHAR(100) NOT NULL
 );
 
-create table if not exists stat (
+CREATE TABLE IF NOT EXISTS stat (
     chat_id BIGINT NOT NULL UNIQUE,
     time_count BIGINT NOT NULL DEFAULT 0,
     FOREIGN KEY (chat_id) REFERENCES chats(id)
 );
 
-create table if not exists tasks (
+CREATE TABLE IF NOT EXISTS tasks (
     chat_id BIGINT NOT NULL,
-    content varchar(1000) not null,
-    time_spent INT not null,
+    content VARCHAR(1000) NOT NULL,
+    time_spent INT NOT NULL,
     FOREIGN KEY (chat_id) REFERENCES chats(id)
 );
 
-create table if not exists chat_to_todoist (
-    chat_id BIGINT NOT NUll,
+CREATE TABLE IF NOT EXISTS chat_to_todoist (
+    chat_id BIGINT NOT NULL,
     todoist_id VARCHAR(100) NOT NULL,
     FOREIGN KEY (chat_id) REFERENCES chats(id),
     FOREIGN KEY (todoist_id) REFERENCES todoist_users(id)
@@ -37,3 +37,5 @@ BEGIN
     INSERT INTO stat (chat_id) VALUES (chatID) ON CONFLICT (chat_id) DO UPDATE SET time_count = stat.time_count + timeSpent;
 END;
 $$;
+
+-- // TODO :: create indexes

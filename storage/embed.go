@@ -4,5 +4,5 @@ import (
 	"embed"
 )
 
-//go:embed sql/*.sql
+//go:embed queries/*.sql
 var SQLEmbedFS embed.FS
