@@ -90,7 +90,10 @@ func (l *LocalStorage) GetMessageToReplyByID(messageID int) (*models.WebHookPars
 	if err := json.Unmarshal([]byte(b), &wp); err != nil {
 		return nil, fmt.Errorf("error during unmarshaling: %w", err)
 	}
-	l.client.Del(context.Background(), key).Result()
+	_, err = l.client.Del(context.Background(), key).Result()
+	if err != nil {
+		return nil, err
+	}
 	return &wp, nil
 }
 

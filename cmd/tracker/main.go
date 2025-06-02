@@ -70,7 +70,9 @@ func main() {
 
 	tgBotService, err := tgbot.NewTgBotService(dao, storage, []string{"localhost:9092", "localhost:9093", "localhost:9094"}, "auth", "webhook", logger)
 	if err != nil {
-
+		logger.Panic("unable to create TgBotService",
+			zap.Error(err),
+		)
 	}
 	tgBotHandlers := tgbot.NewTgBotHandlers(tgBotService, logger)
 	tgbotAPI, err := tgbot.New(cfg.TELEGRAM_APITOKEN, dbh, tgBotService, tgBotHandlers)

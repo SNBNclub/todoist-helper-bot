@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
-	"strings"
 
 	"example.com/bot/internal/models"
 	"example.com/bot/internal/repository"
@@ -35,14 +34,6 @@ type TgBotService struct {
 	kafkaReaderAuthNotifications *kafka.Reader
 	kafkaReaderWebHooks          *kafka.Reader
 	logger                       *zap.Logger
-}
-
-func splitAndTrim(brokers string) []string {
-	var res []string
-	for _, b := range strings.Split(brokers, ",") {
-		res = append(res, strings.TrimSpace(b))
-	}
-	return res
 }
 
 func NewTgBotService(repository *repository.Dao, storage *repository.LocalStorage, kafkaBrokers []string, kafkaAuthTopic, kafkaWebHookTopic string, logger *zap.Logger) (*TgBotService, error) {
@@ -95,7 +86,13 @@ func (s *TgBotService) listenAuthNotifications(ctx context.Context, b *bot.Bot) 
 			} else {
 				sendMessageParams.Text = "Todoist authentication failed. Please try again."
 			}
-			s.storage.SetStatus(wp.ChatID, noActionState)
+			err = s.storage.SetStatus(wp.ChatID, noActionState)
+			if err != nil {
+				s.logger.Error("could not set status for user",
+					zap.Error(err),
+				)
+				continue
+			}
 			_, err = b.SendMessage(ctx, sendMessageParams)
 			if err != nil {
 				s.logger.Error("error during sending message",
@@ -225,10 +222,18 @@ func (s *TgBotService) processStats(ctx context.Context, update *m.Update) *bot.
 }
 
 func (s *TgBotService) processAuth(update *m.Update) *bot.SendMessageParams {
+	logger := s.logger.With(
+		zap.String("TgBotService", "processAuth"),
+	)
 	chatID := update.Message.Chat.ID
 	ch := strconv.FormatInt(chatID, 10)
 	link := "https://snbn.online/auth?chat_id=" + ch
-	s.storage.SetStatus(chatID, todoistRegisteringState)
+	err := s.storage.SetStatus(chatID, todoistRegisteringState)
+	if err != nil {
+		logger.Error("could not set status for user",
+			zap.Error(err),
+		)
+	}
 	return &bot.SendMessageParams{
 		ChatID:    chatID,
 		Text:      fmt.Sprintf("Auth using this [link](%s)", link),
@@ -293,7 +298,13 @@ func (s *TgBotService) processReply(ctx context.Context, update *m.Update) *bot.
 		return sendMessageParams
 	}
 	wp.TimeSpent = timeSpent
-	s.repository.StoreTaskTracked(ctx, chatID, *wp)
+	err = s.repository.StoreTaskTracked(ctx, chatID, *wp)
+	if err != nil {
+		logger.Error("could not store tracked task",
+			zap.Error(err),
+		)
+		return nil
+	}
 	sendMessageParams.Text = fmt.Sprintf("Task: %s succesfully tracked: %d", wp.Task, wp.TimeSpent)
 	return sendMessageParams
 }
