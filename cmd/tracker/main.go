@@ -57,18 +57,18 @@ func main() {
 		)
 	}
 
-	webHookService, stop, err := services.NewWebHookService([]string{"localhost:9092", "localhost:9093", "localhost:9094"}, "webhook", logger)
+	webHookService, stop, err := services.NewWebHookService([]string{"localhost:9091"}, "webhook", logger)
 	if err != nil {
 		logger.Panic("unable to create webhook service",
 			zap.Error(err),
 		)
 	}
-	authHandler := handlers.NewAuthHandler(cfg.APP_CLIENT_ID, cfg.APP_CLIENT_SECRET, []string{"localhost:9092", "localhost:9093", "localhost:9094"}, "auth", dao, storage, logger)
+	authHandler := handlers.NewAuthHandler(cfg.APP_CLIENT_ID, cfg.APP_CLIENT_SECRET, []string{"localhost:9091"}, "auth", dao, storage, logger)
 	webHookHandler := handlers.NewWebHookHandler(webHookService, stop, logger)
 
 	server := handlers.NewService(authHandler, webHookHandler)
 
-	tgBotService, err := tgbot.NewTgBotService(dao, storage, []string{"localhost:9092", "localhost:9093", "localhost:9094"}, "auth", "webhook", logger)
+	tgBotService, err := tgbot.NewTgBotService(dao, storage, []string{"localhost:9091"}, "auth", "webhook", logger)
 	if err != nil {
 		logger.Panic("unable to create TgBotService",
 			zap.Error(err),
@@ -87,5 +87,6 @@ func main() {
 	tgbotAPI.Start(&wg, ctx)
 	server.Start(&wg, ctx)
 
+	logger.Debug("all services started")
 	wg.Wait()
 }

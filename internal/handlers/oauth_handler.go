@@ -46,6 +46,7 @@ func NewAuthHandler(clientID, clientSecret string, kafkaBrokers []string, kafkaT
 		},
 		r:       r,
 		storage: storage,
+		logger:  logger,
 	}
 }
 
@@ -126,23 +127,38 @@ func (ah *AuthHandler) handleCode(w http.ResponseWriter, r *http.Request) {
 	queryParams := ah.queryParams
 	queryParams.Add("code", code)
 
-	url := baseTokenGetURL + "?" + queryParams.Encode()
+	// url := baseTokenGetURL + "?" + queryParams.Encode()
+	url := baseTokenGetURL + "?" + "client_id=" + queryParams.Get("client_id") + "&client_secret=" + queryParams.Get("client_secret") + "&code=" + code
 
+	logger.Debug("making request to url",
+		zap.String("url", url),
+		// zap.String("client_id", queryParams.Get("client_id")),
+		// zap.String("client_secret", queryParams.Get("client_secret")),
+		// zap.String("code", queryParams.Get("code")),
+		// zap.Any("query params", queryParams.Encode()),
+	)
 	resp, err := http.Post(url, "", nil)
 	if err != nil {
 		logger.Error("could not get authorization token",
 			zap.Error(err),
 		)
 	}
+	logger.Debug("request finished with",
+		zap.Int("status_code", resp.StatusCode),
+	)
 	req := models.Token{}
 	defer resp.Body.Close()
-	reqBytes, err := io.ReadAll(r.Body)
+	reqBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		logger.Error("unable to read request body",
 			zap.Error(err),
 		)
 		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
+	logger = logger.With(
+		zap.String("request", string(reqBytes)),
+	)
 	if err := json.Unmarshal(reqBytes, &req); err != nil {
 		// TODO :: write same as webhook handler
 		logger.Warn("error while unmarshaling/unknown request format",
@@ -222,13 +238,13 @@ func (ah *AuthHandler) getUserID(token string) (string, string, error) {
 	if err != nil {
 		return "", "", fmt.Errorf("uable to create http client: %w", err)
 	}
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer:%s", token))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 	resp, err := client.Do(req)
-	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("service responded with not OK status code: %d", resp.StatusCode)
-	}
 	if err != nil {
 		return "", "", fmt.Errorf("request done with error: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("service responded with not OK status code: %d", resp.StatusCode)
 	}
 	defer resp.Body.Close()
 	respBytes, err := io.ReadAll(resp.Body)

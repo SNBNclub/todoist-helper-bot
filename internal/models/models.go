@@ -140,7 +140,7 @@ type SyncUser struct {
 	IsPremium             bool      `json:"is_premium"`
 	JoinableWorkspace     any       `json:"joinable_workspace"`
 	JoinedAt              time.Time `json:"joined_at"`
-	Karma                 int       `json:"karma"`
+	Karma                 float32   `json:"karma"`
 	KarmaTrend            string    `json:"karma_trend"`
 	Lang                  string    `json:"lang"`
 	MfaEnabled            bool      `json:"mfa_enabled"`
